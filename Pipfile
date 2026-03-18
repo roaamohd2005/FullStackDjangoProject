@@ -5,8 +5,10 @@ name = "pypi"
 
 [packages]
 django = "*"
-django-crispy-forms = "*"
 crispy-bootstrap5 = "*"
+django-crispy-forms = "*"
+djangorestframework = "*"
+reportlab = "*"
 
 [dev-packages]
 

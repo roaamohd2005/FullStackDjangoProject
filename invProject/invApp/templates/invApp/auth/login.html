@@ -1,0 +1,36 @@
+{% extends 'invApp/base.html' %}
+
+{% block title %}Login | Inventory Pulse{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <h1>Sign In</h1>
+        <p class="muted">Access your inventory dashboard.</p>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if messages %}
+                {% for message in messages %}
+                    <p class="flash-item {{ message.tags }}">{{ message }}</p>
+                {% endfor %}
+            {% endif %}
+
+            <div class="field-row">
+                <label for="username">Username or Email</label>
+                <input type="text" id="username" name="username" placeholder="Enter your username or email" required autofocus />
+            </div>
+
+            <div class="field-row">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter your password" required />
+            </div>
+
+            <button type="submit" class="auth-btn">Login</button>
+        </form>
+
+        <p class="auth-link">No account? <a href="{% url 'register' %}">Sign up here</a></p>
+    </div>
+</div>
+{% endblock %}
