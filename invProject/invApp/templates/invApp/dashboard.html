@@ -1,8 +1,9 @@
 {% extends 'invApp/base.html' %}
 
-{% block title %}Dashboard | Inventory Pulse{% endblock %}
+{% block title %}Dashboard | Inventory Plus{% endblock %}
 
 {% block content %}
+<div id="dashboardState" data-modal-state="{{ modal_state|default:'' }}" data-editing-product-id="{{ editing_product_id|default:'' }}"></div>
 <div class="container-fluid py-4">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
         <div>
@@ -63,7 +64,12 @@
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-header bg-white"><strong>Stock Levels</strong></div>
-                <div class="card-body"><canvas id="stockChart" height="120"></canvas></div>
+                <div class="card-body chart-card-body">
+                    <div id="chartLoadingState" class="chart-state">Loading chart...</div>
+                    <div id="chartEmptyState" class="chart-state d-none">No stock data yet. Add products to see this chart.</div>
+                    <div id="chartErrorState" class="chart-state d-none">Could not load chart data. Please refresh and try again.</div>
+                    <canvas id="stockChart" height="120"></canvas>
+                </div>
             </div>
         </div>
         <div class="col-lg-4">
@@ -86,11 +92,14 @@
 
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
-            <strong>Your Products</strong>
+            <div>
+                <strong>Your Products</strong>
+                <div class="products-mobile-hint">On tablet, scroll horizontally to see all columns.</div>
+            </div>
             <span class="text-muted">{{ page_obj.paginator.count }} total</span>
         </div>
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
+        <div class="table-responsive products-table-wrap">
+            <table class="table align-middle mb-0 products-table">
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -105,20 +114,21 @@
                 <tbody>
                     {% for product in products %}
                     <tr>
-                        <td>{{ product.name }}</td>
-                        <td>{{ product.category.name|default:"-" }}</td>
-                        <td>{{ product.sku }}</td>
-                        <td>${{ product.price|floatformat:2 }}</td>
-                        <td>
+                        <td data-label="Name">{{ product.name }}</td>
+                        <td data-label="Category">{{ product.category.name|default:"-" }}</td>
+                        <td data-label="SKU">{{ product.sku }}</td>
+                        <td data-label="Price">${{ product.price|floatformat:2 }}</td>
+                        <td data-label="Qty">
                             {% if product.is_low_stock %}
                                 <span class="badge text-bg-danger">{{ product.quantity }} low</span>
                             {% else %}
                                 <span class="badge text-bg-success">{{ product.quantity }}</span>
                             {% endif %}
                         </td>
-                        <td>{{ product.supplier }}</td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-primary edit-product-btn"
+                        <td data-label="Supplier">{{ product.supplier }}</td>
+                        <td data-label="Actions" class="actions-cell">
+                            <div class="product-actions">
+                                <button class="btn btn-sm btn-outline-primary edit-product-btn"
                                 data-id="{{ product.product_id }}"
                                 data-name="{{ product.name }}"
                                 data-category="{{ product.category.id|default:'' }}"
@@ -128,11 +138,12 @@
                                 data-supplier="{{ product.supplier }}"
                                 data-bs-toggle="modal" data-bs-target="#productModal">
                                 Edit
-                            </button>
-                            <form method="post" action="{% url 'product_delete' product.product_id %}" class="d-inline">
-                                {% csrf_token %}
-                                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this product?')">Delete</button>
-                            </form>
+                                </button>
+                                <form method="post" action="{% url 'product_delete' product.product_id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this product?')">Delete</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}
@@ -161,17 +172,22 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="productModalTitle">Add Product</h5>
+                <h5 class="modal-title" id="productModalTitle">
+                    {% if modal_state == 'product_edit' %}Edit Product{% else %}Add Product{% endif %}
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="post" id="productForm" action="{% url 'product_create' %}">
+            <form method="post" id="productForm" action="{% if modal_state == 'product_edit' and editing_product_id %}{% url 'product_edit' editing_product_id %}{% else %}{% url 'product_create' %}{% endif %}">
                 <div class="modal-body">
                     {% csrf_token %}
+                    {% if product_form.non_field_errors %}
+                        <div class="alert alert-danger py-2">{{ product_form.non_field_errors }}</div>
+                    {% endif %}
                     {% for field in product_form %}
                         <div class="mb-3">
                             <label class="form-label">{{ field.label }}</label>
                             {{ field }}
-                            {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+                            {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
                         </div>
                     {% endfor %}
                 </div>
@@ -196,6 +212,9 @@
                     {% csrf_token %}
                     {{ category_form.name.label_tag }}
                     {{ category_form.name }}
+                    {% if category_form.name.errors %}
+                        <div class="text-danger small mt-1">{{ category_form.name.errors }}</div>
+                    {% endif %}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>

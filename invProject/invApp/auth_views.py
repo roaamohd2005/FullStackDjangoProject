@@ -1,8 +1,9 @@
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
 from django.shortcuts import redirect, render
+
+User = get_user_model()
 
 
 def register(request):
@@ -71,7 +72,10 @@ def user_login(request):
 
 @login_required(login_url="login")
 def user_logout(request):
-    username = request.user.username
+    if request.method != "POST":
+        messages.warning(request, "Logout must be confirmed with the button.")
+        return redirect("dashboard")
+
     logout(request)
-    messages.info(request, f"Logged out. See you soon!")
+    messages.info(request, "Logged out. See you soon!")
     return redirect("login")

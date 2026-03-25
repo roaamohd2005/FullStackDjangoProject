@@ -17,7 +17,9 @@ urlpatterns = [
     path("categories/add/", views.category_create, name="category_create"),
     path("products/add/", views.product_create, name="product_create"),
     path("products/<int:product_id>/edit/", views.product_edit, name="product_edit"),
-    path("products/<int:product_id>/delete/", views.product_delete, name="product_delete"),
+    path(
+        "products/<int:product_id>/delete/", views.product_delete, name="product_delete"
+    ),
     path("products/export/csv/", views.export_products_csv, name="export_products_csv"),
     path("products/export/pdf/", views.export_products_pdf, name="export_products_pdf"),
     path("api/stock-chart/", views.stock_chart_data, name="stock_chart_data"),

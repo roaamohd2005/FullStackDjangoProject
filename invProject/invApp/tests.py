@@ -1,8 +1,14 @@
-from django.contrib.auth.models import User
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APIClient
 
-from .models import Product
+from .models import Category, Product
+
+User = get_user_model()
 
 
 class AuthViewsTests(TestCase):
@@ -54,7 +60,7 @@ class AuthViewsTests(TestCase):
         self.assertEqual(register_response.status_code, 200)
         self.assertTrue(register_response.wsgi_request.user.is_authenticated)
 
-        logout_response = self.client.get(reverse("logout"), follow=True)
+        logout_response = self.client.post(reverse("logout"), follow=True)
         self.assertEqual(logout_response.status_code, 200)
         self.assertFalse(logout_response.wsgi_request.user.is_authenticated)
 
@@ -80,18 +86,45 @@ class AuthViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.wsgi_request.user.is_authenticated)
 
+    def test_logout_get_is_rejected(self):
+        user = User.objects.create_user(username="logout_user", password="testpass123")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("logout"), follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
 
 class InventoryViewsTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="testuser", password="testpass123"
         )
-        Product.objects.create(
+        self.other_user = User.objects.create_user(
+            username="otheruser", password="testpass123"
+        )
+        self.category = Category.objects.create(owner=self.user, name="Apparel")
+        self.other_category = Category.objects.create(
+            owner=self.other_user, name="Hardware"
+        )
+        self.product = Product.objects.create(
+            owner=self.user,
+            category=self.category,
             name="Cotton Shirt",
             sku="SKU-1001",
-            price=24.99,
+            price=Decimal("24.99"),
             quantity=50,
             supplier="ABC Corp",
+        )
+        self.other_product = Product.objects.create(
+            owner=self.other_user,
+            category=self.other_category,
+            name="Hammer",
+            sku="SKU-2001",
+            price=Decimal("12.00"),
+            quantity=15,
+            supplier="ToolCo",
         )
 
     def test_dashboard_redirects_unauthenticated(self):
@@ -103,7 +136,7 @@ class InventoryViewsTests(TestCase):
         self.client.login(username="testuser", password="testpass123")
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Inventory Pulse")
+        self.assertContains(response, "Inventory Plus")
 
     def test_create_product_authenticated(self):
         self.client.login(username="testuser", password="testpass123")
@@ -111,6 +144,7 @@ class InventoryViewsTests(TestCase):
             reverse("product_create"),
             {
                 "name": "Sneakers",
+                "category": self.category.id,
                 "sku": "SKU-1002",
                 "price": 59.9,
                 "quantity": 20,
@@ -121,6 +155,68 @@ class InventoryViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Product.objects.filter(sku="SKU-1002").exists())
 
+    def test_duplicate_sku_shows_field_error(self):
+        self.client.login(username="testuser", password="testpass123")
+
+        response = self.client.post(
+            reverse("product_create"),
+            {
+                "name": "Cotton Shirt Duplicate",
+                "category": self.category.id,
+                "sku": "SKU-1001",
+                "price": "10.00",
+                "quantity": 5,
+                "supplier": "ABC Corp",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(
+            response,
+            "You already have a product with this SKU.",
+            status_code=400,
+        )
+
+    def test_edit_other_users_product_forbidden(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.post(
+            reverse("product_edit", args=[self.other_product.product_id]),
+            {
+                "name": "Changed",
+                "category": self.other_category.id,
+                "sku": "SKU-2001",
+                "price": "10.00",
+                "quantity": 5,
+                "supplier": "X",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_other_users_product_forbidden(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.post(
+            reverse("product_delete", args=[self.other_product.product_id])
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_product_with_other_users_category_rejected(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.post(
+            reverse("product_create"),
+            {
+                "name": "Sneakers",
+                "category": self.other_category.id,
+                "sku": "SKU-1009",
+                "price": "59.90",
+                "quantity": 20,
+                "supplier": "RunFast",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Select a valid choice", status_code=400)
+
     def test_chart_api_authenticated(self):
         self.client.login(username="testuser", password="testpass123")
         response = self.client.get(reverse("stock_chart_data"))
@@ -128,3 +224,193 @@ class InventoryViewsTests(TestCase):
         payload = response.json()
         self.assertIn("labels", payload)
         self.assertIn("quantities", payload)
+
+    def test_invalid_price_shows_field_error(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.post(
+            reverse("product_create"),
+            {
+                "name": "Bad Price Item",
+                "category": self.category.id,
+                "sku": "SKU-3001",
+                "price": "0",
+                "quantity": 3,
+                "supplier": "SupplierX",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Price must be greater than 0.", status_code=400)
+
+    def test_invalid_quantity_shows_field_error(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.post(
+            reverse("product_create"),
+            {
+                "name": "Bad Qty Item",
+                "category": self.category.id,
+                "sku": "SKU-3002",
+                "price": "12.50",
+                "quantity": -1,
+                "supplier": "SupplierX",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "greater than or equal to 0", status_code=400)
+
+    def test_duplicate_category_name_shows_field_error(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.post(
+            reverse("category_create"),
+            {"name": "apparel"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(
+            response,
+            "You already have a category with this name.",
+            status_code=400,
+        )
+
+    def test_get_product_delete_does_not_delete(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.get(
+            reverse("product_delete", args=[self.product.product_id])
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            Product.objects.filter(product_id=self.product.product_id).exists()
+        )
+
+
+class InventoryApiBoundaryTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_a = User.objects.create_user("user_a", password="testpass123")
+        self.user_b = User.objects.create_user("user_b", password="testpass123")
+        self.category_a = Category.objects.create(owner=self.user_a, name="A Category")
+        self.category_b = Category.objects.create(owner=self.user_b, name="B Category")
+        self.product_a = Product.objects.create(
+            owner=self.user_a,
+            category=self.category_a,
+            name="Item A",
+            sku="A-001",
+            price=Decimal("9.99"),
+            quantity=4,
+            supplier="A Supplier",
+        )
+
+    def test_api_rejects_other_users_category(self):
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.post(
+            "/products/",
+            {
+                "name": "Bad Product",
+                "category": self.category_b.id,
+                "sku": "A-002",
+                "price": "12.99",
+                "quantity": 3,
+                "supplier": "Supplier",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category", response.data)
+
+    def test_api_rejects_duplicate_sku_per_owner(self):
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.post(
+            "/products/",
+            {
+                "name": "Duplicate",
+                "category": self.category_a.id,
+                "sku": "A-001",
+                "price": "12.99",
+                "quantity": 3,
+                "supplier": "Supplier",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("sku", response.data)
+
+    def test_api_user_cannot_patch_another_users_product(self):
+        self.client.force_authenticate(user=self.user_b)
+        response = self.client.patch(
+            f"/products/{self.product_a.product_id}/",
+            {"name": "Intrusion"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_api_user_cannot_delete_another_users_product(self):
+        self.client.force_authenticate(user=self.user_b)
+        response = self.client.delete(f"/products/{self.product_a.product_id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Product.objects.filter(pk=self.product_a.pk).exists())
+
+    def test_api_list_shows_only_owned_products(self):
+        Product.objects.create(
+            owner=self.user_b,
+            category=self.category_b,
+            name="Item B",
+            sku="B-001",
+            price=Decimal("7.50"),
+            quantity=6,
+            supplier="B Supplier",
+        )
+        self.client.force_authenticate(user=self.user_a)
+
+        response = self.client.get("/products/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        product_ids = {item["product_id"] for item in response.data}
+        self.assertIn(self.product_a.product_id, product_ids)
+        self.assertEqual(len(product_ids), 1)
+
+    def test_api_list_requires_authentication(self):
+        unauth_client = APIClient()
+        response = unauth_client.get("/products/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_api_rejects_invalid_price(self):
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.post(
+            "/products/",
+            {
+                "name": "Invalid Price",
+                "category": self.category_a.id,
+                "sku": "A-003",
+                "price": "0",
+                "quantity": 3,
+                "supplier": "Supplier",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("price", response.data)
+
+    def test_api_rejects_invalid_quantity(self):
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.post(
+            "/products/",
+            {
+                "name": "Invalid Qty",
+                "category": self.category_a.id,
+                "sku": "A-004",
+                "price": "15.50",
+                "quantity": -1,
+                "supplier": "Supplier",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("quantity", response.data)

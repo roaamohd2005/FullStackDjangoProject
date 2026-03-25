@@ -11,6 +11,9 @@ djangorestframework = "*"
 reportlab = "*"
 
 [dev-packages]
+black = "*"
+ruff = "*"
+pre-commit = "*"
 
 [requires]
 python_version = "3.14"
