@@ -6,7 +6,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from .models import Category, Product
+from .models import ActivityLog, Category, Product
 
 User = get_user_model()
 
@@ -284,6 +284,124 @@ class InventoryViewsTests(TestCase):
             Product.objects.filter(product_id=self.product.product_id).exists()
         )
 
+    def test_export_csv_requires_authentication(self):
+        response = self.client.get(reverse("export_products_csv"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith("/login/"))
+
+    def test_export_csv_contains_only_owned_products(self):
+        self.client.login(username="testuser", password="testpass123")
+
+        response = self.client.get(reverse("export_products_csv"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn(
+            "attachment; filename=products.csv", response["Content-Disposition"]
+        )
+
+        csv_text = response.content.decode("utf-8")
+        self.assertIn("Name,Category,SKU,Price,Quantity,Supplier,Low Stock", csv_text)
+        self.assertIn("Cotton Shirt,Apparel,SKU-1001,24.99,50,ABC Corp,No", csv_text)
+        self.assertNotIn("Hammer", csv_text)
+        self.assertNotIn("SKU-2001", csv_text)
+
+    def test_export_pdf_requires_authentication(self):
+        response = self.client.get(reverse("export_products_pdf"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith("/login/"))
+
+    def test_export_pdf_returns_pdf_attachment(self):
+        self.client.login(username="testuser", password="testpass123")
+
+        response = self.client.get(reverse("export_products_pdf"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn(
+            "attachment; filename=products.pdf", response["Content-Disposition"]
+        )
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_product_create_writes_activity_log(self):
+        self.client.login(username="testuser", password="testpass123")
+
+        response = self.client.post(
+            reverse("product_create"),
+            {
+                "name": "Sneakers",
+                "category": self.category.id,
+                "sku": "SKU-1002",
+                "price": "59.90",
+                "quantity": 20,
+                "supplier": "RunFast",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        created_product = Product.objects.get(owner=self.user, sku="SKU-1002")
+        log = ActivityLog.objects.get(user=self.user, action=ActivityLog.ACTION_ADDED)
+        self.assertEqual(log.product_id, created_product.product_id)
+        self.assertIn("Added product Sneakers (SKU-1002)", log.details)
+
+    def test_product_edit_writes_activity_log(self):
+        self.client.login(username="testuser", password="testpass123")
+
+        response = self.client.post(
+            reverse("product_edit", args=[self.product.product_id]),
+            {
+                "name": "Cotton Shirt Updated",
+                "category": self.category.id,
+                "sku": "SKU-1001",
+                "price": "24.99",
+                "quantity": 55,
+                "supplier": "ABC Corp",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        log = ActivityLog.objects.get(user=self.user, action=ActivityLog.ACTION_EDITED)
+        self.assertEqual(log.product_id, self.product.product_id)
+        self.assertIn("Edited product Cotton Shirt Updated (SKU-1001)", log.details)
+
+    def test_product_delete_writes_activity_log(self):
+        self.client.login(username="testuser", password="testpass123")
+
+        response = self.client.post(
+            reverse("product_delete", args=[self.product.product_id]),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        log = ActivityLog.objects.get(user=self.user, action=ActivityLog.ACTION_DELETED)
+        self.assertIsNone(log.product)
+        self.assertIn("Deleted product Cotton Shirt (SKU-1001)", log.details)
+
+    def test_dashboard_activity_logs_are_scoped_to_current_user(self):
+        ActivityLog.objects.create(
+            user=self.user,
+            product=self.product,
+            action=ActivityLog.ACTION_ADDED,
+            details="Visible log for owner",
+        )
+        ActivityLog.objects.create(
+            user=self.other_user,
+            product=self.other_product,
+            action=ActivityLog.ACTION_ADDED,
+            details="Hidden log for other user",
+        )
+
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Visible log for owner")
+        self.assertNotContains(response, "Hidden log for other user")
+
 
 class InventoryApiBoundaryTests(TestCase):
     def setUp(self):
@@ -414,3 +532,142 @@ class InventoryApiBoundaryTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("quantity", response.data)
+
+
+class InventoryApiObjectPermissionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.owner_user = User.objects.create_user("owner_user", password="testpass123")
+        self.other_user = User.objects.create_user("other_user", password="testpass123")
+
+        self.owner_category = Category.objects.create(
+            owner=self.owner_user,
+            name="Owner Category",
+        )
+        self.other_category = Category.objects.create(
+            owner=self.other_user,
+            name="Other Category",
+        )
+
+        self.owner_product = Product.objects.create(
+            owner=self.owner_user,
+            category=self.owner_category,
+            name="Owner Product",
+            sku="OWNER-001",
+            price=Decimal("10.00"),
+            quantity=5,
+            supplier="Owner Supplier",
+        )
+        self.other_product = Product.objects.create(
+            owner=self.other_user,
+            category=self.other_category,
+            name="Other Product",
+            sku="OTHER-001",
+            price=Decimal("20.00"),
+            quantity=7,
+            supplier="Other Supplier",
+        )
+
+    def test_products_list_returns_only_owned_objects(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.get("/products/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        product_ids = {item["product_id"] for item in response.data}
+        self.assertIn(self.owner_product.product_id, product_ids)
+        self.assertNotIn(self.other_product.product_id, product_ids)
+
+    def test_products_retrieve_respects_object_permission(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        own_response = self.client.get(f"/products/{self.owner_product.product_id}/")
+        other_response = self.client.get(f"/products/{self.other_product.product_id}/")
+
+        self.assertEqual(own_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_products_update_respects_object_permission(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        own_response = self.client.patch(
+            f"/products/{self.owner_product.product_id}/",
+            {"name": "Owner Product Updated"},
+            format="json",
+        )
+        other_response = self.client.patch(
+            f"/products/{self.other_product.product_id}/",
+            {"name": "Intrusion Attempt"},
+            format="json",
+        )
+
+        self.assertEqual(own_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.owner_product.refresh_from_db()
+        self.other_product.refresh_from_db()
+        self.assertEqual(self.owner_product.name, "Owner Product Updated")
+        self.assertEqual(self.other_product.name, "Other Product")
+
+    def test_products_delete_respects_object_permission(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        own_response = self.client.delete(f"/products/{self.owner_product.product_id}/")
+        other_response = self.client.delete(
+            f"/products/{self.other_product.product_id}/"
+        )
+
+        self.assertEqual(own_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(other_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(Product.objects.filter(pk=self.owner_product.pk).exists())
+        self.assertTrue(Product.objects.filter(pk=self.other_product.pk).exists())
+
+    def test_categories_list_returns_only_owned_objects(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.get("/categories/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        category_ids = {item["id"] for item in response.data}
+        self.assertIn(self.owner_category.id, category_ids)
+        self.assertNotIn(self.other_category.id, category_ids)
+
+    def test_categories_retrieve_respects_object_permission(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        own_response = self.client.get(f"/categories/{self.owner_category.id}/")
+        other_response = self.client.get(f"/categories/{self.other_category.id}/")
+
+        self.assertEqual(own_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_categories_update_respects_object_permission(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        own_response = self.client.patch(
+            f"/categories/{self.owner_category.id}/",
+            {"name": "Owner Category Updated"},
+            format="json",
+        )
+        other_response = self.client.patch(
+            f"/categories/{self.other_category.id}/",
+            {"name": "Intrusion Attempt"},
+            format="json",
+        )
+
+        self.assertEqual(own_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.owner_category.refresh_from_db()
+        self.other_category.refresh_from_db()
+        self.assertEqual(self.owner_category.name, "Owner Category Updated")
+        self.assertEqual(self.other_category.name, "Other Category")
+
+    def test_categories_delete_respects_object_permission(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        own_response = self.client.delete(f"/categories/{self.owner_category.id}/")
+        other_response = self.client.delete(f"/categories/{self.other_category.id}/")
+
+        self.assertEqual(own_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(other_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(Category.objects.filter(pk=self.owner_category.pk).exists())
+        self.assertTrue(Category.objects.filter(pk=self.other_category.pk).exists())

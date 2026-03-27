@@ -4,13 +4,13 @@
 
 {% block content %}
 <div id="dashboardState" data-modal-state="{{ modal_state|default:'' }}" data-editing-product-id="{{ editing_product_id|default:'' }}"></div>
-<div class="container-fluid py-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+<div class="container-fluid dashboard-shell py-4">
+    <div class="dashboard-header d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
         <div>
             <h2 class="mb-1">Inventory Dashboard</h2>
             <p class="text-muted mb-0">Track your own stock, categories, and activity.</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="dashboard-header-actions d-flex gap-2">
             <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#productModal">Add Product</button>
             <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#categoryModal">Add Category</button>
         </div>
@@ -60,13 +60,52 @@
         </div>
     </div>
 
+    <div class="active-filters-bar mb-3" role="status" aria-live="polite">
+        <div class="active-filters-label">View summary</div>
+        <div class="active-filters-chips">
+            <span class="filter-chip filter-chip-neutral">Showing {{ page_obj.paginator.count }} products</span>
+            {% if search %}
+                <span class="filter-chip">Search: {{ search }}</span>
+            {% endif %}
+            {% if supplier %}
+                <span class="filter-chip">Supplier: {{ supplier }}</span>
+            {% endif %}
+            {% if category_id %}
+                {% for c in categories %}
+                    {% if category_id == c.id|stringformat:'s' %}
+                        <span class="filter-chip">Category: {{ c.name }}</span>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            {% if sort == 'price' %}
+                <span class="filter-chip">Sort: Highest Price</span>
+            {% elif sort == 'quantity' %}
+                <span class="filter-chip">Sort: Lowest Quantity</span>
+            {% elif sort == 'updated' %}
+                <span class="filter-chip">Sort: Recently Updated</span>
+            {% endif %}
+            {% if not search and not supplier and not category_id and sort == 'name' %}
+                <span class="filter-chip filter-chip-neutral">No filters applied</span>
+            {% endif %}
+        </div>
+        {% if search or supplier or category_id or sort != 'name' %}
+            <a class="btn btn-sm btn-outline-dark" href="{% url 'dashboard' %}">Clear All</a>
+        {% endif %}
+    </div>
+
     <div class="row g-3 mb-4">
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-header bg-white"><strong>Stock Levels</strong></div>
                 <div class="card-body chart-card-body">
                     <div id="chartLoadingState" class="chart-state">Loading chart...</div>
-                    <div id="chartEmptyState" class="chart-state d-none">No stock data yet. Add products to see this chart.</div>
+                    <div id="chartEmptyState" class="chart-state d-none">
+                        <div class="empty-state-block">
+                            <p class="empty-state-title">No stock data yet</p>
+                            <p class="empty-state-note">Add your first product to unlock quantity trends.</p>
+                            <button class="btn btn-sm btn-dark" data-bs-toggle="modal" data-bs-target="#productModal">Add Product</button>
+                        </div>
+                    </div>
                     <div id="chartErrorState" class="chart-state d-none">Could not load chart data. Please refresh and try again.</div>
                     <canvas id="stockChart" height="120"></canvas>
                 </div>
@@ -83,7 +122,10 @@
                             <small class="text-muted">{{ log.created_at|date:"M d, Y H:i" }}</small>
                         </div>
                     {% empty %}
-                        <p class="text-muted mb-0">No activity yet.</p>
+                        <div class="empty-state-panel">
+                            <p class="empty-state-title">No activity yet</p>
+                            <p class="empty-state-note mb-0">Edits, additions, and deletes will appear here so recent changes are easy to audit.</p>
+                        </div>
                     {% endfor %}
                 </div>
             </div>
@@ -105,8 +147,8 @@
                         <th>Name</th>
                         <th>Category</th>
                         <th>SKU</th>
-                        <th>Price</th>
-                        <th>Qty</th>
+                        <th class="text-end">Price</th>
+                        <th class="text-end">Qty</th>
                         <th>Supplier</th>
                         <th>Actions</th>
                     </tr>
@@ -117,8 +159,8 @@
                         <td data-label="Name">{{ product.name }}</td>
                         <td data-label="Category">{{ product.category.name|default:"-" }}</td>
                         <td data-label="SKU">{{ product.sku }}</td>
-                        <td data-label="Price">${{ product.price|floatformat:2 }}</td>
-                        <td data-label="Qty">
+                        <td data-label="Price" class="price-cell">${{ product.price|floatformat:2 }}</td>
+                        <td data-label="Qty" class="qty-cell">
                             {% if product.is_low_stock %}
                                 <span class="badge text-bg-danger">{{ product.quantity }} low</span>
                             {% else %}
@@ -147,7 +189,21 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center py-4">No products found.</td></tr>
+                    <tr>
+                        <td colspan="7" class="text-center py-4">
+                            <div class="empty-state-panel table-empty-state">
+                                {% if search or supplier or category_id %}
+                                    <p class="empty-state-title">No products match these filters</p>
+                                    <p class="empty-state-note">Try broadening search terms or reset filters to view all inventory.</p>
+                                    <a class="btn btn-sm btn-outline-dark" href="{% url 'dashboard' %}">Reset Filters</a>
+                                {% else %}
+                                    <p class="empty-state-title">No products yet</p>
+                                    <p class="empty-state-note">Create your first product to start tracking stock and supplier activity.</p>
+                                    <button class="btn btn-sm btn-dark" data-bs-toggle="modal" data-bs-target="#productModal">Add Product</button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
