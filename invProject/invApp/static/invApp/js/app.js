@@ -27,23 +27,85 @@ async function loadChartData() {
     hideState(emptyState);
     hideState(errorState);
     const ctx = canvas.getContext("2d");
+    const hasValueSeries =
+      Array.isArray(data.values) && data.values.length === data.labels.length;
+
+    const datasets = [
+      {
+        label: "Stock Quantity",
+        data: data.quantities || [],
+        borderRadius: 6,
+        backgroundColor: "rgba(13, 110, 253, 0.7)",
+        yAxisID: "yQuantity",
+      },
+    ];
+
+    if (hasValueSeries) {
+      datasets.push({
+        type: "line",
+        label: "Inventory Value",
+        data: data.values,
+        borderColor: "rgba(25, 135, 84, 0.95)",
+        backgroundColor: "rgba(25, 135, 84, 0.2)",
+        pointBackgroundColor: "rgba(25, 135, 84, 0.95)",
+        pointBorderColor: "#ffffff",
+        pointBorderWidth: 1,
+        pointRadius: 3,
+        tension: 0.25,
+        fill: false,
+        yAxisID: "yValue",
+      });
+    }
+
     new Chart(ctx, {
       type: "bar",
       data: {
         labels: data.labels || [],
-        datasets: [
-          {
-            label: "Stock Quantity",
-            data: data.quantities || [],
-            borderRadius: 6,
-            backgroundColor: "rgba(13, 110, 253, 0.7)",
-          },
-        ],
+        datasets,
       },
       options: {
         responsive: true,
         plugins: {
-          legend: { display: false },
+          legend: { display: hasValueSeries },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = context.raw;
+                if (context.dataset.yAxisID === "yValue") {
+                  return `${context.dataset.label}: $${Number(value).toFixed(2)}`;
+                }
+                return `${context.dataset.label}: ${value}`;
+              },
+            },
+          },
+        },
+        scales: {
+          yQuantity: {
+            type: "linear",
+            position: "left",
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: "Units",
+            },
+          },
+          yValue: {
+            type: "linear",
+            position: "right",
+            beginAtZero: true,
+            grid: {
+              drawOnChartArea: false,
+            },
+            title: {
+              display: hasValueSeries,
+              text: "Value ($)",
+            },
+            ticks: {
+              callback(value) {
+                return `$${Number(value).toFixed(0)}`;
+              },
+            },
+          },
         },
       },
     });

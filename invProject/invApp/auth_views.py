@@ -3,6 +3,8 @@ from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 
+from .forms import RegistrationForm
+
 User = get_user_model()
 
 
@@ -10,39 +12,16 @@ def register(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
 
+    form = RegistrationForm(request.POST or None)
+
     if request.method == "POST":
-        username = request.POST.get("username", "").strip()
-        email = request.POST.get("email", "").strip().lower()
-        password1 = request.POST.get("password1", "")
-        password2 = request.POST.get("password2", "")
-
-        errors = []
-
-        if not username:
-            errors.append("Username is required.")
-        if User.objects.filter(username=username).exists():
-            errors.append("Username already taken.")
-        if not email:
-            errors.append("Email is required.")
-        if User.objects.filter(email=email).exists():
-            errors.append("Email already registered.")
-        if len(password1) < 6:
-            errors.append("Password must be at least 6 characters.")
-        if password1 != password2:
-            errors.append("Passwords do not match.")
-
-        if errors:
-            for error in errors:
-                messages.error(request, error)
-        else:
-            user = User.objects.create_user(
-                username=username, email=email, password=password1
-            )
+        if form.is_valid():
+            user = form.save()
             login(request, user)
-            messages.success(request, f"Welcome, {username}!")
+            messages.success(request, f"Welcome, {user.username}!")
             return redirect("dashboard")
 
-    return render(request, "invApp/auth/register.html")
+    return render(request, "invApp/auth/register.html", {"form": form})
 
 
 def user_login(request):

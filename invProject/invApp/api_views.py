@@ -1,4 +1,6 @@
+from django.db import IntegrityError
 from rest_framework import permissions, viewsets
+from rest_framework.exceptions import ValidationError
 
 from .models import Category, Product
 from .serializers import CategorySerializer, ProductSerializer
@@ -17,7 +19,14 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return Category.objects.filter(owner=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        try:
+            serializer.save(owner=self.request.user)
+        except IntegrityError as exc:
+            # Defensive fallback: if DB uniqueness is hit after serializer checks,
+            # return a clean field-level 400 instead of surfacing a 500.
+            raise ValidationError(
+                {"name": ["You already have a category with this name."]}
+            ) from exc
 
 
 class ProductViewSet(viewsets.ModelViewSet):

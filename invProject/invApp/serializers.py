@@ -4,6 +4,34 @@ from .models import Category, Product
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.owner = self.context.get("owner")
+        if self.owner is None:
+            request = self.context.get("request")
+            self.owner = getattr(request, "user", None) if request else None
+
+    def validate_name(self, value):
+        if not value or not self.owner or not self.owner.is_authenticated:
+            return value
+
+        normalized_name = value.strip()
+        duplicate_qs = Category.objects.filter(
+            owner=self.owner,
+            name__iexact=normalized_name,
+        )
+
+        if self.instance is not None:
+            duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+
+        if duplicate_qs.exists():
+            raise serializers.ValidationError(
+                "You already have a category with this name."
+            )
+
+        return normalized_name
+
     class Meta:
         model = Category
         fields = ["id", "name", "created_at"]

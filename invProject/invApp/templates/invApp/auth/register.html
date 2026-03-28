@@ -1,46 +1,85 @@
-{% extends 'invApp/base.html' %}
-
-{% block title %}Register | Inventory Plus{% endblock %}
-
-{% block content %}
+{% extends 'invApp/base.html' %} {% block title %}Register | Inventory Plus{%
+endblock %} {% block content %}
 <div class="auth-container">
-    <div class="auth-card">
-        <h1>Create Account</h1>
-        <p class="muted">Join and start managing your inventory now.</p>
+  <div class="auth-card">
+    <h1>Create Account</h1>
+    <p class="muted">Join and start managing your inventory now.</p>
 
-        <form method="post" novalidate>
-            {% csrf_token %}
+    <form method="post" novalidate>
+      {% csrf_token %} {% if messages %} {% for message in messages %}
+      <p class="flash-item {{ message.tags }}">{{ message }}</p>
+      {% endfor %} {% endif %} {% if form and form.non_field_errors %} {% for
+      error in form.non_field_errors %}
+      <p class="flash-item error">{{ error }}</p>
+      {% endfor %} {% endif %}
 
-            {% if messages %}
-                {% for message in messages %}
-                    <p class="flash-item {{ message.tags }}">{{ message }}</p>
-                {% endfor %}
-            {% endif %}
+      <div class="field-row">
+        <label for="username">Username</label>
+        <input
+          type="text"
+          id="username"
+          name="username"
+          placeholder="Choose a username"
+          value="{% if form %}{{ form.username.value|default:'' }}{% endif %}"
+          required
+        />
+        {% if form and form.username.errors %} {% for error in
+        form.username.errors %}
+        <p class="flash-item error">{{ error }}</p>
+        {% endfor %} {% endif %}
+      </div>
 
-            <div class="field-row">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" placeholder="Choose a username" required />
-            </div>
+      <div class="field-row">
+        <label for="email">Email Address</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          placeholder="your.email@example.com"
+          value="{% if form %}{{ form.email.value|default:'' }}{% endif %}"
+          required
+        />
+        {% if form and form.email.errors %} {% for error in form.email.errors %}
+        <p class="flash-item error">{{ error }}</p>
+        {% endfor %} {% endif %}
+      </div>
 
-            <div class="field-row">
-                <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" placeholder="your.email@example.com" required />
-            </div>
+      <div class="field-row">
+        <label for="password1">Password</label>
+        <input
+          type="password"
+          id="password1"
+          name="password1"
+          placeholder="Minimum 6 characters"
+          required
+        />
+        {% if form and form.password1.errors %} {% for error in
+        form.password1.errors %}
+        <p class="flash-item error">{{ error }}</p>
+        {% endfor %} {% endif %}
+      </div>
 
-            <div class="field-row">
-                <label for="password1">Password</label>
-                <input type="password" id="password1" name="password1" placeholder="Minimum 6 characters" required />
-            </div>
+      <div class="field-row">
+        <label for="password2">Confirm Password</label>
+        <input
+          type="password"
+          id="password2"
+          name="password2"
+          placeholder="Repeat password"
+          required
+        />
+        {% if form and form.password2.errors %} {% for error in
+        form.password2.errors %}
+        <p class="flash-item error">{{ error }}</p>
+        {% endfor %} {% endif %}
+      </div>
 
-            <div class="field-row">
-                <label for="password2">Confirm Password</label>
-                <input type="password" id="password2" name="password2" placeholder="Repeat password" required />
-            </div>
+      <button type="submit" class="auth-btn">Register</button>
+    </form>
 
-            <button type="submit" class="auth-btn">Register</button>
-        </form>
-
-        <p class="auth-link">Already have an account? <a href="{% url 'login' %}">Login</a></p>
-    </div>
+    <p class="auth-link">
+      Already have an account? <a href="{% url 'login' %}">Login</a>
+    </p>
+  </div>
 </div>
 {% endblock %}

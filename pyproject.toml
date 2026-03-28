@@ -1,10 +1,10 @@
 [tool.black]
 line-length = 88
-target-version = ["py312"]   # ← Change to your actual Python version if not 3.12
+target-version = ["py314"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = [
@@ -18,7 +18,7 @@ ignore = ["RUF012"]
 exclude = [
     ".venv",
     "__pycache__",
-    "migrations",        # ← Prevents linting migration files
+    "migrations",
     "static",
     "media",
 ]

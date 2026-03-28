@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 from django.contrib.messages import constants as messages
@@ -25,9 +26,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-dwr8=-(0b@kl(+jb4lrj=cyf25z=!5_&%d2%^xyzbac$$+r2cz"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+]
+
+if not DEBUG and not ALLOWED_HOSTS:
+    raise RuntimeError("DJANGO_ALLOWED_HOSTS must be set when DJANGO_DEBUG is false.")
 
 
 # Application definition

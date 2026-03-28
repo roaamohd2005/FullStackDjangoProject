@@ -1,6 +1,7 @@
 import csv
 from decimal import Decimal
 from io import BytesIO
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -53,6 +54,16 @@ def _dashboard_base_queryset(request):
     }
 
 
+def _dashboard_export_query_string(base):
+    query = {
+        "search": base["search"],
+        "supplier": base["supplier"],
+        "category": base["category_id"],
+        "sort": base["sort"],
+    }
+    return urlencode(query)
+
+
 def _build_dashboard_context(
     request,
     *,
@@ -93,6 +104,7 @@ def _build_dashboard_context(
         "supplier": base["supplier"],
         "category_id": base["category_id"],
         "sort": base["sort"],
+        "export_query_string": _dashboard_export_query_string(base),
         "suppliers": all_products.values_list("supplier", flat=True)
         .distinct()
         .order_by("supplier"),
@@ -225,6 +237,8 @@ def stock_chart_data(request):
 
 @login_required(login_url="login")
 def export_products_csv(request):
+    products = _dashboard_base_queryset(request)["products"]
+
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = "attachment; filename=products.csv"
     writer = csv.writer(response)
@@ -232,9 +246,7 @@ def export_products_csv(request):
         ["Name", "Category", "SKU", "Price", "Quantity", "Supplier", "Low Stock"]
     )
 
-    for product in Product.objects.filter(owner=request.user).select_related(
-        "category"
-    ):
+    for product in products:
         writer.writerow(
             [
                 product.name,
@@ -251,6 +263,8 @@ def export_products_csv(request):
 
 @login_required(login_url="login")
 def export_products_pdf(request):
+    products = _dashboard_base_queryset(request)["products"]
+
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     y = 760
@@ -259,7 +273,7 @@ def export_products_pdf(request):
     y -= 25
     p.setFont("Helvetica", 10)
 
-    for product in Product.objects.filter(owner=request.user).order_by("name"):
+    for product in products:
         line = (
             f"{product.name} | {product.sku} | Qty: "
             f"{product.quantity} | ${product.price:.2f}"
